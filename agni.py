@@ -12,8 +12,9 @@ logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 # 🔑 TELEGRAM CONFIGURATION (HARDCODED)
 # ⚠️ WARNING: KEEP THIS REPOSITORY PRIVATE ON GITHUB!
 # ------------------------------------------------------------------------------
-TELEGRAM_BOT_TOKEN = "8727235503:AAHwwLyglNAkJHS2HB-0diguapaD6xRZnVk"
-TELEGRAM_CHAT_ID = "8519524258"
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
 
 def send_telegram_alert(message):
     """Telegram Bot को लाइव अलर्ट भेजने का फंक्शन"""
