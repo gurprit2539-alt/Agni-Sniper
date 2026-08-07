@@ -30,4 +30,4 @@ jobs:
           # यह लाइनें आपके सुरक्षित सीक्रेट्स को कोड तक पहुँचाएंगी
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python agni.py
+        run: python -u agni.py
