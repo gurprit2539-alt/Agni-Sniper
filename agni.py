@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚀 PREDATOR v37.0 : AGNI (LOOPING INSTITUTIONAL SNIPER + TELEGRAM)
+# 🚀 PREDATOR v39.0 : AGNI (GITHUB ACTIONS EXCLUSIVE - NO INTERNAL LOOP)
 # ==============================================================================
 import logging, os, sys, warnings, urllib.request, xml.etree.ElementTree as ET, re, time
 from datetime import datetime, time as dtime
@@ -9,14 +9,14 @@ warnings.filterwarnings("ignore")
 logging.getLogger("yfinance").setLevel(logging.CRITICAL)
 
 # ------------------------------------------------------------------------------
-# 🔑 TELEGRAM CONFIGURATION (GIST / GITHUB SECRETS)
+# 🔑 TELEGRAM CONFIGURATION
 # ------------------------------------------------------------------------------
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def send_telegram_alert(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print(" ⚠️ TELEGRAM WARNING: Secrets missing.")
+        print(" ⚠️ TELEGRAM WARNING: Token या Chat ID नहीं मिला।")
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
@@ -26,16 +26,22 @@ def send_telegram_alert(message):
         req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=5) as response:
             if response.status == 200:
-                print(" 🚀 [TELEGRAM ALERT SENT SUCCESSFULLY!]")
+                pass # Successfully sent
     except Exception as e:
         print(f" ❌ TELEGRAM ERROR: ({e})")
 
+# ------------------------------------------------------------------------------
+# ⚙️ SYSTEM PARAMETERS
+# ------------------------------------------------------------------------------
 BASE_MAX_RISK_BUDGET = 180.0
 MIN_STOCK_PRICE = 50.0
 MAX_STOCKS_PER_SECTOR = 2
 MAX_VRR_CAP = 15.0
 
 ist = pytz.timezone("Asia/Kolkata")
+now_ist = datetime.now(ist)
+
+print(f"🔓 AGNI v39.0 LIVE CLOCK : [{now_ist.strftime('%I:%M:%S %p IST')}]")
 
 sector_map = {
     "IT": ["INFY.NS", "TCS.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "COFORGE.NS", "BSOFT.NS", "PERSISTENT.NS", "MPHASIS.NS", "LTTS.NS", "OFSS.NS", "CYIENT.NS", "KPITTECH.NS", "TATAELXSI.NS", "LTIM.NS", "SONATSOFTW.NS", "ZENSARTECH.NS", "INTELLECT.NS", "MASTEK.NS", "HAPPSTMNDS.NS", "LATENTVIEW.NS", "NEWGEN.NS", "DATAPATTNS.NS", "CEINFO.NS", "AFFLE.NS", "ROUTE.NS", "TANLA.NS", "INFIBEAM.NS", "RATEGAIN.NS", "FSL.NS", "NETWEB.NS"],
@@ -75,190 +81,272 @@ def fetch_live_catalysts(stock_list):
 
 NEWS_CATALYST_STOCKS, EARNINGS_BLACKOUT_STOCKS = fetch_live_catalysts(indian_stocks)
 
-# ==============================================================================
-# 🔄 MAIN LOOP (रनिंग इनफिनिट लूप - हर 5 मिनट में स्कैन करेगा)
-# ==============================================================================
-print(" 🚀 AGNI v37.0 : LIVE LOOP INITIALIZED ...")
+try:
+    df_daily = yf.download(indian_stocks + ["^NSEI"], period="1mo", interval="1d", group_by="ticker", threads=True, progress=False)
+    df_5m = yf.download(indian_stocks + ["^NSEI"], period="5d", interval="5m", group_by="ticker", threads=True, progress=False)
+except Exception as e:
+    send_telegram_alert(f" ⛔ DATA FETCH ERROR: {e}")
+    sys.exit()
 
-while True:
-    now_ist = datetime.now(ist)
-    today_date = now_ist.date()
+nifty_regime = "🟡 CHOPPY / NEUTRAL"
+macro_gap_down_freeze = False
+macro_gap_up_freeze = False
+nifty_pct_change = 0.0
+
+try:
+    nifty_df_5m = df_5m["^NSEI"].dropna()
+    nifty_df_daily = df_daily["^NSEI"].dropna()
     
-    # 🕒 मार्केट बंद होने का चेक (शाम 3:35 के बाद लूप रुक जाएगा ताकि सर्वर रिसोर्स बचे)
-    if now_ist.time() > dtime(15, 35, 0):
-        print(" 🌙 MARKET CLOSED FOR THE DAY. SLEEPING TILL MORNING.")
-        break
-
-    try:
-        df_daily = yf.download(indian_stocks + ["^NSEI"], period="1mo", interval="1d", group_by="ticker", threads=True, progress=False)
-        df_5m = yf.download(indian_stocks + ["^NSEI"], period="5d", interval="5m", group_by="ticker", threads=True, progress=False)
-    except Exception as e:
-        print(f" ⛔ DATA FETCH ERROR: {e}")
-        time.sleep(60)
-        continue
-
-    nifty_regime = "🟡 CHOPPY / NEUTRAL"
-    macro_gap_down_freeze = False
-    macro_gap_up_freeze = False
-    nifty_pct_change = 0.0
-
-    try:
-        nifty_df_5m = df_5m["^NSEI"].dropna()
-        nifty_df_daily = df_daily["^NSEI"].dropna()
+    n_live = float(nifty_df_5m["Close"].iloc[-1])
+    n_ema20 = float(nifty_df_5m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
+    n_ema9 = float(nifty_df_5m["Close"].ewm(span=9, adjust=False).mean().iloc[-1])
+    
+    today_data_n = nifty_df_5m.loc[nifty_df_5m.index.date == nifty_df_5m.index.date[-1]]
+    if len(today_data_n) > 0 and len(nifty_df_daily) > 1:
+        n_day_o = float(today_data_n["Open"].iloc[0])
+        n_prev_close = float(nifty_df_daily["Close"].iloc[-2])
+        nifty_gap_pct = ((n_day_o - n_prev_close) / n_prev_close) * 100
+        nifty_pct_change = ((n_live - n_prev_close) / n_prev_close) * 100
         
-        n_live = float(nifty_df_5m["Close"].iloc[-1])
-        n_ema20 = float(nifty_df_5m["Close"].ewm(span=20, adjust=False).mean().iloc[-1])
-        n_ema9 = float(nifty_df_5m["Close"].ewm(span=9, adjust=False).mean().iloc[-1])
-        
-        today_data_n = nifty_df_5m.loc[nifty_df_5m.index.date == nifty_df_5m.index.date[-1]]
-        if len(today_data_n) > 0 and len(nifty_df_daily) > 1:
-            n_day_o = float(today_data_n["Open"].iloc[0])
-            n_prev_close = float(nifty_df_daily["Close"].iloc[-2])
-            nifty_gap_pct = ((n_day_o - n_prev_close) / n_prev_close) * 100
-            nifty_pct_change = ((n_live - n_prev_close) / n_prev_close) * 100
-            
-            if nifty_gap_pct <= -0.30 and now_ist.time() < dtime(10, 30, 0):
-                macro_gap_down_freeze = True
-                nifty_regime = f"🔴 GAP-DOWN FREEZE ({nifty_gap_pct:.2f}%)"
-            elif nifty_gap_pct >= 0.30 and now_ist.time() < dtime(10, 30, 0):
-                macro_gap_up_freeze = True
-                nifty_regime = f"🟢 GAP-UP FREEZE (+{nifty_gap_pct:.2f}%)"
-            else:
-                buffer = n_live * 0.0008
-                if n_live > (n_ema20 + buffer) and n_live > n_day_o and n_ema9 >= n_ema20:
-                    nifty_regime = "🟢 BULLISH"
-                elif n_live < (n_ema20 - buffer) and n_live < n_day_o and n_ema9 <= n_ema20:
-                    nifty_regime = "🔴 BEARISH"
+        if nifty_gap_pct <= -0.30 and now_ist.time() < dtime(10, 30, 0):
+            macro_gap_down_freeze = True
+            nifty_regime = f"🔴 GAP-DOWN FREEZE ({nifty_gap_pct:.2f}%) - NO LONGS"
+        elif nifty_gap_pct >= 0.30 and now_ist.time() < dtime(10, 30, 0):
+            macro_gap_up_freeze = True
+            nifty_regime = f"🟢 GAP-UP FREEZE (+{nifty_gap_pct:.2f}%) - NO SHORTS"
+        else:
+            buffer = n_live * 0.0008
+            if n_live > (n_ema20 + buffer) and n_live > n_day_o and n_ema9 >= n_ema20:
+                nifty_regime = "🟢 BULLISH"
+            elif n_live < (n_ema20 - buffer) and n_live < n_day_o and n_ema9 <= n_ema20:
+                nifty_regime = "🔴 BEARISH"
+except: pass
+
+is_choppy = "CHOPPY" in nifty_regime or "FREEZE" in nifty_regime
+min_score_required = 80 if is_choppy else 70
+MY_MAX_RISK_BUDGET = BASE_MAX_RISK_BUDGET / 2.0 if is_choppy else BASE_MAX_RISK_BUDGET
+
+is_afternoon_session = now_ist.time() >= dtime(14, 0, 0)
+current_vrr_ceiling = 6.0 if is_afternoon_session else 10.0
+
+parent_audit, sector_perf = {}, {}
+for s in indian_stocks:
+    try:
+        d_df = df_daily[s].dropna().copy()
+        if len(d_df) < 15: continue
+        d_df["H-L"] = d_df["High"] - d_df["Low"]
+        d_df["H-PC"] = (d_df["High"] - d_df["Close"].shift(1)).abs()
+        d_df["L-PC"] = (d_df["Low"] - d_df["Close"].shift(1)).abs()
+        parent_audit[s] = {"ADR": float(d_df[["H-L", "H-PC", "L-PC"]].max(axis=1).iloc[-15:-1].mean()), "EMA20_D": float(d_df["Close"].ewm(span=20, adjust=False).mean().iloc[-1]), "Prev_Candle": "BEAR" if d_df["Close"].iloc[-2] < d_df["Open"].iloc[-2] else "BULL"}
     except: pass
 
-    is_choppy = "CHOPPY" in nifty_regime or "FREEZE" in nifty_regime
-    min_score_required = 80 if is_choppy else 70
-    MY_MAX_RISK_BUDGET = BASE_MAX_RISK_BUDGET / 2.0 if is_choppy else BASE_MAX_RISK_BUDGET
-
-    parent_audit, sector_perf = {}, {}
-    for s in indian_stocks:
+for sec_name, tickers in sector_map.items():
+    gains = []
+    for t in tickers:
         try:
-            d_df = df_daily[s].dropna().copy()
-            if len(d_df) < 15: continue
-            d_df["H-L"] = d_df["High"] - d_df["Low"]
-            d_df["H-PC"] = (d_df["High"] - d_df["Close"].shift(1)).abs()
-            d_df["L-PC"] = (d_df["Low"] - d_df["Close"].shift(1)).abs()
-            parent_audit[s] = {"ADR": float(d_df[["H-L", "H-PC", "L-PC"]].max(axis=1).iloc[-15:-1].mean()), "EMA20_D": float(d_df["Close"].ewm(span=20, adjust=False).mean().iloc[-1]), "Prev_Candle": "BEAR" if d_df["Close"].iloc[-2] < d_df["Open"].iloc[-2] else "BULL"}
+            df_t = df_5m[t].dropna()
+            df_today = df_t.loc[df_t.index.date == df_t.index.date[-1]]
+            if len(df_today) > 0: gains.append(((float(df_today["Close"].iloc[-1]) - float(df_today["Open"].iloc[0])) / float(df_today["Open"].iloc[0])) * 100)
         except: pass
+    sector_perf[sec_name] = pd.Series(gains).median() if gains else 0.0
 
-    for sec_name, tickers in sector_map.items():
-        gains = []
-        for t in tickers:
-            try:
-                df_t = df_5m[t].dropna()
-                df_today = df_t.loc[df_t.index.date == df_t.index.date[-1]]
-                if len(df_today) > 0: gains.append(((float(df_today["Close"].iloc[-1]) - float(df_today["Open"].iloc[0])) / float(df_today["Open"].iloc[0])) * 100)
-            except: pass
-        sector_perf[sec_name] = pd.Series(gains).median() if gains else 0.0
+sorted_sec = sorted(sector_perf.items(), key=lambda x: x[1], reverse=True)
+top_sec_bull, top_sec_bear = [s[0] for s in sorted_sec[:4]], [s[0] for s in sorted_sec[-4:]]
+scanned_setups, sector_counts = [], {}
 
-    sorted_sec = sorted(sector_perf.items(), key=lambda x: x[1], reverse=True)
-    top_sec_bull, top_sec_bear = [s[0] for s in sorted_sec[:4]], [s[0] for s in sorted_sec[-4:]]
-    scanned_setups, sector_counts = [], {}
+passed_stocks_count = 0
 
-    for s in indian_stocks:
-        try:
-            if s not in df_5m.columns.levels[0] or s not in parent_audit: continue
-            df = df_5m[s].dropna()
-            live_c = float(df["Close"].iloc[-1])
-            if live_c < MIN_STOCK_PRICE: continue
+for s in indian_stocks:
+    try:
+        if s not in df_5m.columns.levels[0] or s not in parent_audit: continue
+        df = df_5m[s].dropna()
+        live_c = float(df["Close"].iloc[-1])
+        if live_c < MIN_STOCK_PRICE: continue
 
-            df["Typ"] = (df["High"] + df["Low"] + df["Close"]) / 3
-            df["Date"] = df.index.date
-            df["VWAP"] = df.groupby("Date").apply(lambda x: (x["Typ"] * x["Volume"]).cumsum() / x["Volume"].cumsum()).reset_index(level=0, drop=True)
-            df["EMA20"], df["EMA9"] = df["Close"].ewm(span=20, adjust=False).mean(), df["Close"].ewm(span=9, adjust=False).mean()
-            atr_14 = float(df[["High", "Low", "Close"]].apply(lambda x: max(x["High"]-x["Low"], abs(x["High"]-x["Close"]), abs(x["Low"]-x["Close"])), axis=1).rolling(14).mean().iloc[-1])
-            
-            curr_o, curr_h, curr_l = float(df["Open"].iloc[-1]), float(df["High"].iloc[-1]), float(df["Low"].iloc[-1])
-            close_pct = ((live_c - curr_l) / (curr_h - curr_l)) * 100 if (curr_h - curr_l) > 0 else 50.0
-            live_vwap, ema_val, ema9_val = float(df["VWAP"].iloc[-1]), float(df["EMA20"].iloc[-1]), float(df["EMA9"].iloc[-1])
-            live_v, prev_v = float(df["Volume"].iloc[-1]), float(df["Volume"].iloc[-2])
+        df["Typ"] = (df["High"] + df["Low"] + df["Close"]) / 3
+        df["Date"] = df.index.date
+        df["VWAP"] = df.groupby("Date").apply(lambda x: (x["Typ"] * x["Volume"]).cumsum() / x["Volume"].cumsum()).reset_index(level=0, drop=True)
+        df["EMA20"], df["EMA9"] = df["Close"].ewm(span=20, adjust=False).mean(), df["Close"].ewm(span=9, adjust=False).mean()
+        atr_14 = float(df[["High", "Low", "Close"]].apply(lambda x: max(x["High"]-x["Low"], abs(x["High"]-x["Close"]), abs(x["Low"]-x["Close"])), axis=1).rolling(14).mean().iloc[-1])
+        
+        curr_o, curr_h, curr_l = float(df["Open"].iloc[-1]), float(df["High"].iloc[-1]), float(df["Low"].iloc[-1])
+        close_pct = ((live_c - curr_l) / (curr_h - curr_l)) * 100 if (curr_h - curr_l) > 0 else 50.0
+        live_vwap, ema_val, ema9_val = float(df["VWAP"].iloc[-1]), float(df["EMA20"].iloc[-1]), float(df["EMA9"].iloc[-1])
+        live_v, prev_v = float(df["Volume"].iloc[-1]), float(df["Volume"].iloc[-2])
 
-            last_candle_time = ist.localize(df.index[-1]) if df.index[-1].tzinfo is None else df.index[-1]
-            seconds_from_start = (now_ist - last_candle_time).total_seconds()
-            vrr_multiplier = min(300.0 / max(20.0, seconds_from_start), 15.0) if 0 < seconds_from_start < 300 else 1.0
-            vrr_delta = (live_v * vrr_multiplier / prev_v) if prev_v > 0 else 1.0
+        last_candle_time = ist.localize(df.index[-1]) if df.index[-1].tzinfo is None else df.index[-1]
+        seconds_from_start = (now_ist - last_candle_time).total_seconds()
+        vrr_multiplier = min(300.0 / max(20.0, seconds_from_start), 15.0) if 0 < seconds_from_start < 300 else 1.0
+        vrr_delta = (live_v * vrr_multiplier / prev_v) if prev_v > 0 else 1.0
 
-            p_data = parent_audit[s]
-            today_data = df.loc[df["Date"] == df["Date"].iloc[-1]]
-            day_high, day_low = float(today_data["High"].max()), float(today_data["Low"].min())
-            prev_close = float(df["Close"].iloc[-len(today_data)-1]) if len(df) > len(today_data) else float(today_data["Open"].iloc[0])
-            
-            stock_pct_change = ((live_c - prev_close) / prev_close) * 100
-            rs_outperformance = stock_pct_change - nifty_pct_change
+        p_data = parent_audit[s]
+        today_data = df.loc[df["Date"] == df["Date"].iloc[-1]]
+        day_high, day_low = float(today_data["High"].max()), float(today_data["Low"].min())
+        prev_close = float(df["Close"].iloc[-len(today_data)-1]) if len(df) > len(today_data) else float(today_data["Open"].iloc[0])
+        
+        stock_pct_change = ((live_c - prev_close) / prev_close) * 100
+        rs_outperformance = stock_pct_change - nifty_pct_change
 
-            adr_used_pct = ((max(day_high, prev_close) - min(day_low, prev_close)) / p_data["ADR"]) * 100
-            my_sec = next((sec for sec, ticks in sector_map.items() if s in ticks), "OTHER")
-            my_sec_perf = sector_perf.get(my_sec, 0.0)
+        adr_used_pct = ((max(day_high, prev_close) - min(day_low, prev_close)) / p_data["ADR"]) * 100
+        my_sec = next((sec for sec, ticks in sector_map.items() if s in ticks), "OTHER")
+        my_sec_perf = sector_perf.get(my_sec, 0.0)
 
-            is_news_catalyst = (s in NEWS_CATALYST_STOCKS)
-            my_morning_fuel_cap = 250.0 if is_news_catalyst else 200.0
-            has_ignition_early = (vrr_delta >= (2.5 if is_news_catalyst else 3.0))
+        is_news_catalyst = (s in NEWS_CATALYST_STOCKS)
+        my_morning_fuel_cap = 250.0 if is_news_catalyst else 200.0
+        
+        is_late_bloomer_window = (now_ist.time() >= dtime(10, 0, 0))
+        required_ignition_vrr = 2.5 if (is_news_catalyst and is_late_bloomer_window) else 3.0
+        has_ignition_early = (vrr_delta >= required_ignition_vrr)
 
-            trade_dir, is_contrarian_jackpot, fake_defensive, sec_divergence = None, False, False, False
+        trade_dir, is_contrarian_jackpot, fake_defensive, sec_divergence = None, False, False, False
 
-            if "BULLISH" in nifty_regime and live_c > p_data["EMA20_D"] and p_data["Prev_Candle"] == "BULL": trade_dir = "LONG"
-            elif "BEARISH" in nifty_regime and live_c < p_data["EMA20_D"] and p_data["Prev_Candle"] == "BEAR": trade_dir = "SHORT"
-            
-            if not trade_dir and rs_outperformance >= 2.0 and live_c > live_vwap and has_ignition_early:
-                trade_dir, is_contrarian_jackpot = "LONG", True
+        if "BULLISH" in nifty_regime and live_c > p_data["EMA20_D"] and p_data["Prev_Candle"] == "BULL": trade_dir = "LONG"
+        elif "BEARISH" in nifty_regime and live_c < p_data["EMA20_D"] and p_data["Prev_Candle"] == "BEAR": trade_dir = "SHORT"
+        
+        if not trade_dir and rs_outperformance >= 2.0 and live_c > live_vwap and has_ignition_early:
+            trade_dir = "LONG"
+            is_contrarian_jackpot = True
 
-            if trade_dir == "SHORT" and "BULLISH" in nifty_regime and rs_outperformance > 0: continue
-            if trade_dir == "LONG" and ("BEARISH" in nifty_regime) and not is_contrarian_jackpot: continue
-            if trade_dir == "LONG" and macro_gap_down_freeze and not is_contrarian_jackpot: continue
+        if "BEARISH" in nifty_regime and live_c > p_data["EMA20_D"] and has_ignition_early and p_data["Prev_Candle"] == "BULL":
+            if my_sec in top_sec_bull[:2]: trade_dir, is_contrarian_jackpot = "LONG", True
+            else: fake_defensive = True
 
-            candle_body_pct = abs(curr_o - live_c) / (curr_h - curr_l) if (curr_h - curr_l) > 0 else 0
-            current_candle_size_pct = ((curr_h - curr_l) / curr_l) * 100
-            todays_total_move_pct = ((day_high - day_low) / day_low) * 100
+        if not trade_dir and has_ignition_early:
+            is_safe_chop = (adr_used_pct <= 50.0) and (my_sec in (top_sec_bull[:2] if live_c > p_data["EMA20_D"] else top_sec_bear[:2]))
+            if is_choppy and is_safe_chop: trade_dir = "LONG" if (live_c > p_data["EMA20_D"] and p_data["Prev_Candle"] == "BULL") else "SHORT" if (live_c < p_data["EMA20_D"] and p_data["Prev_Candle"] == "BEAR") else None
 
-            is_smart_money_trap = False
-            trap_msg = ""
-            if vrr_delta >= 2.5 and candle_body_pct <= 0.30:
-                is_smart_money_trap = True
-                trap_msg = "🚫 REJECT: SMART MONEY TRAP"
-            elif current_candle_size_pct >= 3.5:
-                is_smart_money_trap = True
-                trap_msg = "🚫 REJECT: FOMO/GLITCH TRAP"
+        if trade_dir == "SHORT" and "BULLISH" in nifty_regime and rs_outperformance > 0: continue
+        if trade_dir == "LONG" and ("BEARISH" in nifty_regime) and not is_contrarian_jackpot: continue
+        if trade_dir == "LONG" and macro_gap_down_freeze and not is_contrarian_jackpot: continue
+        if trade_dir == "SHORT" and macro_gap_up_freeze: continue 
 
-            score, reasons = 0, []
-            if trade_dir == "LONG" and my_sec in top_sec_bull: score += 35; reasons.append("HotSec(Bull)")
-            if is_news_catalyst: score += 20; reasons.append("📰 Auto-News")
-            if trade_dir == "LONG" and rs_outperformance >= 1.5: score += 20; reasons.append(f"💪 RS(+{rs_outperformance:.1f}%)")
+        if trade_dir == "LONG" and my_sec_perf < 0: sec_divergence, div_msg = True, "SECTOR IS RED"
+        elif trade_dir == "SHORT" and my_sec_perf > 0: sec_divergence, div_msg = True, "SECTOR IS GREEN"
 
-            if score >= min_score_required:
-                sl_buffer = atr_14 * 0.05
+        if not trade_dir and not fake_defensive and not sec_divergence: continue
+        
+        is_wick_rejection, wick_alert = False, ""
+        if (curr_h - curr_l) > 0:
+            upper_wick_pct = (curr_h - max(curr_o, live_c)) / (curr_h - curr_l)
+            lower_wick_pct = (min(curr_o, live_c) - curr_l) / (curr_h - curr_l)
+            if trade_dir == "LONG" and upper_wick_pct > 0.40: 
+                is_wick_rejection, wick_alert = True, f"🚫 REJECT: TOP SELLING PRESSURE (Wick {int(upper_wick_pct*100)}%)"
+            elif trade_dir == "SHORT" and lower_wick_pct > 0.40: 
+                is_wick_rejection, wick_alert = True, f"🚫 REJECT: BOTTOM BUYING (Wick {int(lower_wick_pct*100)}%)"
+
+        candle_body_pct = abs(curr_o - live_c) / (curr_h - curr_l) if (curr_h - curr_l) > 0 else 0
+        current_candle_size_pct = ((curr_h - curr_l) / curr_l) * 100
+        todays_total_move_pct = ((day_high - day_low) / day_low) * 100
+
+        is_smart_money_trap = False
+        trap_msg = ""
+        if vrr_delta >= 2.5 and candle_body_pct <= 0.30:
+            is_smart_money_trap = True
+            trap_msg = f"🚫 REJECT: SMART MONEY TRAP"
+        elif current_candle_size_pct >= 3.5:
+            is_smart_money_trap = True
+            trap_msg = f"🚫 REJECT: FOMO/GLITCH TRAP"
+        elif todays_total_move_pct < 1.0 and now_ist.time() >= dtime(10, 0, 0):
+            is_smart_money_trap = True
+            trap_msg = f"🚫 REJECT: ZOMBIE STOCK"
+
+        score, reasons = 0, []
+        if trade_dir == "LONG" and my_sec in top_sec_bull: score += 35; reasons.append("HotSec(Bull)")
+        elif trade_dir == "SHORT" and my_sec in top_sec_bear: score += 35; reasons.append("ColdSec(Bear)")
+        if is_news_catalyst: score += 20; reasons.append("📰 Auto-News")
+        if trade_dir == "LONG" and rs_outperformance >= 1.5: score += 20; reasons.append(f"💪 RS(+{rs_outperformance:.1f}%)")
+
+        vwap_dist = ((live_c - live_vwap) / live_vwap) * 100
+        if trade_dir == "LONG" and 0.1 <= vwap_dist <= 2.5: score += 35; reasons.append("VWAP-Base")
+        elif trade_dir == "SHORT" and -2.5 <= vwap_dist <= -0.1: score += 35; reasons.append("VWAP-Reject")
+
+        if has_ignition_early and adr_used_pct <= 70.0: score += 25; reasons.append("⚡Fresh-Fuel")
+        if has_ignition_early and ((trade_dir == "LONG" and close_pct >= (60.0 if is_choppy else 50.0)) or (trade_dir == "SHORT" and close_pct <= (40.0 if is_choppy else 50.0))):
+            score += 40; reasons.append(f"🔥 True-Ignition(VRR {vrr_delta:.1f}x)")
+
+        if score >= min_score_required or fake_defensive or sec_divergence:
+            sl_buffer = atr_14 * 0.05
+            if trade_dir == "LONG" or fake_defensive or (sec_divergence and trade_dir == "LONG"):
                 final_sl = min(live_vwap, ema_val) - sl_buffer
                 risk_sh = live_c - final_sl
-                if risk_sh <= 0: continue
-                qty = max(1, int(MY_MAX_RISK_BUDGET / risk_sh))
-                t1 = live_c + (risk_sh * 3.0)
-                t2 = live_c + (risk_sh * 5.0)
+            else:
+                final_sl = max(live_vwap, ema_val) + sl_buffer
+                risk_sh = final_sl - live_c
+            
+            if is_choppy:
+                min_sl_floor = live_c * (0.0065 if live_c > 3000.0 else 0.0050)
+                if risk_sh < min_sl_floor:
+                    risk_sh = min_sl_floor
+                    final_sl = live_c - risk_sh if trade_dir == "LONG" else live_c + risk_sh
 
-                verdict = "🟢 INSTITUTIONAL PASS"
-                if is_smart_money_trap: verdict = trap_msg
-                elif adr_used_pct > my_morning_fuel_cap: verdict = "🚫 REJECT: EXHAUSTED"
+            if risk_sh <= 0: continue
+            qty = max(1, int(MY_MAX_RISK_BUDGET / risk_sh))
+            t1 = live_c + (risk_sh * 3.0) if trade_dir == "LONG" else live_c - (risk_sh * 3.0)
+            t2 = live_c + (risk_sh * 5.0) if trade_dir == "LONG" else live_c - (risk_sh * 5.0)
 
+            orb_violation = False
+            if len(today_data) > 0 and now_ist.time() < dtime(9, 30, 0):
+                orb_5m_high = float(today_data["High"].iloc[0])
+                if trade_dir == "LONG" and live_c > orb_5m_high and vrr_delta >= 2.5 and rs_outperformance >= 1.0:
+                    reasons.append("🦅 EARLY BIRD 5M-ORB")
+                elif trade_dir == "LONG" and live_c <= orb_5m_high:
+                    orb_violation = True
+            elif len(today_data) > 3 and now_ist.time() >= dtime(9, 30, 0):
+                orb_high = float(today_data["High"].iloc[0:3].max())
+                orb_low = float(today_data["Low"].iloc[0:3].min())
+                if trade_dir == "LONG" and live_c <= orb_high: orb_violation = True
+                elif trade_dir == "SHORT" and live_c >= orb_low: orb_violation = True
+
+            verdict = "🟢 INSTITUTIONAL PASS"
+            
+            if is_smart_money_trap: verdict = trap_msg
+            elif sec_divergence: verdict = f"🚫 REJECT: SECTOR DIVERGENCE ({div_msg})"
+            elif fake_defensive: verdict = "🚫 REJECT: FAKE DEFENSIVE"
+            elif (curr_h - curr_l) == 0 and abs(stock_pct_change) > 4.5: verdict = "🚫 REJECT: CIRCUIT HIT"
+            elif adr_used_pct > my_morning_fuel_cap: verdict = f"🚫 REJECT: EXHAUSTED"
+            elif orb_violation: verdict = "🚫 REJECT: WAITING FOR BREAKOUT"
+            elif (s in EARNINGS_BLACKOUT_STOCKS) and (dtime(12, 0, 0) <= now_ist.time() <= dtime(15, 0, 0)): verdict = "🚫 REJECT: EARNINGS BLACKOUT"
+            elif is_wick_rejection: verdict = wick_alert
+            elif vwap_dist > 4.5 or vwap_dist < -4.5: verdict = "🚫 REJECT: EXTREME RUBBER-BAND"
+            elif vrr_delta >= MAX_VRR_CAP and score >= 90: verdict = f"🚨 BLOCK DEAL WARNING"
+            elif vrr_delta >= current_vrr_ceiling: verdict = f"🚫 REJECT: CLIMAX VOLUME TRAP"
+            elif trade_dir == "SHORT" and (live_c > curr_o or close_pct > 50.0): verdict = "🚫 REJECT: BULL TRAP"
+            elif trade_dir == "LONG" and (live_c < curr_o or close_pct < 50.0): verdict = "🚫 REJECT: BEAR TRAP"
+
+            if "REJECT" not in verdict:
+                passed_stocks_count += 1
                 stock_sym = s.replace(".NS", "")
-                if "REJECT" not in verdict:
-                    msg = (
-                        f"🔥 *AGNI BREAKOUT ALERT* 🔥\n"
-                        f"-------------------------------------\n"
-                        f"📌 *Stock:* `{stock_sym}` ({trade_dir})\n"
-                        f"💰 *CMP:* ₹{round(live_c, 2)}\n"
-                        f"📊 *Volume:* {round(vrr_delta, 1)}x\n"
-                        f"🛡️ *SL:* ₹{round(final_sl, 2)}\n"
-                        f"🎯 *T1 (1:3):* ₹{round(t1, 2)}\n"
-                        f"🎯 *T2 (1:5):* ₹{round(t2, 2)}\n"
-                        f"📦 *Qty:* {qty} Shares\n"
-                        f"-------------------------------------\n"
-                        f"⏰ *Time:* {now_ist.strftime('%I:%M:%S %p IST')}"
-                    )
-                    send_telegram_alert(msg)
-        except: pass
+                
+                msg = (
+                    f"🔥 *AGNI BREAKOUT ALERT* 🔥\n"
+                    f"-------------------------------------\n"
+                    f"📌 *Stock:* `{stock_sym}` ({trade_dir})\n"
+                    f"💰 *CMP:* ₹{round(live_c, 2)}\n"
+                    f"📊 *Volume Multiplier:* {round(vrr_delta, 1)}x\n"
+                    f"🛡️ *Stop Loss:* ₹{round(final_sl, 2)}\n"
+                    f"🎯 *Target 1 (1:3):* ₹{round(t1, 2)}\n"
+                    f"🎯 *Target 2 (1:5):* ₹{round(t2, 2)}\n"
+                    f"📦 *Qty:* {qty} Shares\n"
+                    f"🧠 *Logic:* { ' + '.join(reasons) }\n"
+                    f"-------------------------------------\n"
+                    f"⏰ *Time:* {now_ist.strftime('%I:%M:%S %p IST')}"
+                )
+                send_telegram_alert(msg)
 
-    print(f" ⏳ Scan iteration completed at [{now_ist.strftime('%I:%M:%S %p')}]. Sleeping for 5 minutes...")
-    time.sleep(300) # 5 मिनट (300 सेकंड) का लूप रेस्ट
+    except: pass
+
+# ------------------------------------------------------------------------------
+# 📉 SCAN SUMMARY ALERT (यह मैसेज हमेशा जाएगा, जिससे पता चले कि बॉट चल रहा है)
+# ------------------------------------------------------------------------------
+if passed_stocks_count == 0:
+    summary_msg = (
+        f"ℹ️ *AGNI HEARTBEAT (SCAN COMPLETE)*\n"
+        f"-------------------------------------\n"
+        f"📉 *Nifty Trend:* {nifty_regime}\n"
+        f"⚠️ *Result:* 0 Stocks Passed.\n"
+        f"(All breakouts were rejected by strict filters).\n"
+        f"⏰ *Time:* {now_ist.strftime('%I:%M:%S %p IST')}"
+    )
+    send_telegram_alert(summary_msg)
+
+print(" ✅ Script Execution Completed Successfully.")
