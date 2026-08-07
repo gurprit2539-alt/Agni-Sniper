@@ -1,10 +1,10 @@
-name: AGNI Sniper Live Scan
+name: AGNI Sniper (Continuous Run)
 
 on:
   schedule:
-    # यह मार्केट आवर्स (सुबह 9:15 से दोपहर 3:30 IST) के दौरान हर 5 मिनट में ऑटोमैटिकली चलेगा
-    - cron: '*/5 3-10 * * 1-5'
-  workflow_dispatch: # मैन्युअल टेस्ट बटन के लिए
+    # यह अब दिन में सिर्फ एक बार (सुबह 9:15 IST) ट्रिगर होगा
+    - cron: '45 3 * * 1-5' 
+  workflow_dispatch:
 
 jobs:
   run-sniper:
@@ -27,4 +27,4 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python agni.py
+        run: python -u agni.py
