@@ -1,16 +1,14 @@
-name: AGNI Sniper Auto-Run
+name: AGNI Sniper Live Scan
 
 on:
   schedule:
-    # यह मार्केट के टाइम (IST 9:15 AM से 3:30 PM) के हिसाब से सेट है।
-    # UTC टाइम में यह सुबह 4:00 से 10:00 बजे तक सोमवार से शुक्रवार चलेगा।
-    - cron: '*/5 4-10 * * 1-5'
-  workflow_dispatch: # यह आपको मैन्युअली रन करने का बटन भी देगा
+    # यह मार्केट आवर्स (सुबह 9:15 से दोपहर 3:30 IST) के दौरान हर 5 मिनट में ऑटोमैटिकली चलेगा
+    - cron: '*/5 3-10 * * 1-5'
+  workflow_dispatch: # मैन्युअल टेस्ट बटन के लिए
 
 jobs:
   run-sniper:
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
@@ -27,7 +25,6 @@ jobs:
 
       - name: Run AGNI Code
         env:
-          # यह लाइनें आपके सुरक्षित सीक्रेट्स को कोड तक पहुँचाएंगी
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -u agni.py
+        run: python agni.py
