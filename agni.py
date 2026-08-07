@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚀 PREDATOR v39.0 : AGNI (GITHUB ACTIONS EXCLUSIVE - NO INTERNAL LOOP)
+# 🚀 PREDATOR v39.1 : AGNI (GITHUB ACTIONS - BULLETPROOF TELEGRAM RETRY)
 # ==============================================================================
 import logging, os, sys, warnings, urllib.request, xml.etree.ElementTree as ET, re, time
 from datetime import datetime, time as dtime
@@ -20,15 +20,22 @@ def send_telegram_alert(message):
         return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    try:
-        import json
-        data = json.dumps(payload).encode('utf-8')
-        req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
-        with urllib.request.urlopen(req, timeout=5) as response:
-            if response.status == 200:
-                pass # Successfully sent
-    except Exception as e:
-        print(f" ❌ TELEGRAM ERROR: ({e})")
+    
+    # 🔥 BULLETPROOF RETRY LOGIC (Timeout बढ़ाकर 20s किया और 3 Retries डाले)
+    for attempt in range(3):
+        try:
+            import json
+            data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(url, data=data, headers={'Content-Type': 'application/json'})
+            with urllib.request.urlopen(req, timeout=20) as response:
+                if response.status == 200:
+                    print(f" 🚀 [TELEGRAM ALERT SENT SUCCESSFULLY on Attempt {attempt+1}!]")
+                    return  # मैसेज चला गया, तो यहीं से वापस आ जाओ
+        except Exception as e:
+            print(f" ⚠️ TELEGRAM RETRY {attempt+1} FAILED: ({e})")
+            time.sleep(2)  # अगले ट्राई से पहले 2 सेकंड रुको
+            
+    print(" ❌ TELEGRAM ERROR: 3 बार ट्राई करने के बाद भी मैसेज नहीं गया।")
 
 # ------------------------------------------------------------------------------
 # ⚙️ SYSTEM PARAMETERS
@@ -41,7 +48,7 @@ MAX_VRR_CAP = 15.0
 ist = pytz.timezone("Asia/Kolkata")
 now_ist = datetime.now(ist)
 
-print(f"🔓 AGNI v39.0 LIVE CLOCK : [{now_ist.strftime('%I:%M:%S %p IST')}]")
+print(f"🔓 AGNI v39.1 LIVE CLOCK : [{now_ist.strftime('%I:%M:%S %p IST')}]")
 
 sector_map = {
     "IT": ["INFY.NS", "TCS.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "COFORGE.NS", "BSOFT.NS", "PERSISTENT.NS", "MPHASIS.NS", "LTTS.NS", "OFSS.NS", "CYIENT.NS", "KPITTECH.NS", "TATAELXSI.NS", "LTIM.NS", "SONATSOFTW.NS", "ZENSARTECH.NS", "INTELLECT.NS", "MASTEK.NS", "HAPPSTMNDS.NS", "LATENTVIEW.NS", "NEWGEN.NS", "DATAPATTNS.NS", "CEINFO.NS", "AFFLE.NS", "ROUTE.NS", "TANLA.NS", "INFIBEAM.NS", "RATEGAIN.NS", "FSL.NS", "NETWEB.NS"],
@@ -336,7 +343,7 @@ for s in indian_stocks:
     except: pass
 
 # ------------------------------------------------------------------------------
-# 📉 SCAN SUMMARY ALERT (यह मैसेज हमेशा जाएगा, जिससे पता चले कि बॉट चल रहा है)
+# 📉 SCAN SUMMARY ALERT
 # ------------------------------------------------------------------------------
 if passed_stocks_count == 0:
     summary_msg = (
