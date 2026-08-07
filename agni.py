@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚀 PREDATOR v39.1 : AGNI (GITHUB ACTIONS - BULLETPROOF TELEGRAM RETRY)
+# 🚀 PREDATOR v40.0 : AGNI (TELEGRAM HTML UPGRADE + EXACT ERROR LOGGING)
 # ==============================================================================
 import logging, os, sys, warnings, urllib.request, xml.etree.ElementTree as ET, re, time
 from datetime import datetime, time as dtime
@@ -18,10 +18,14 @@ def send_telegram_alert(message):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         print(" ⚠️ TELEGRAM WARNING: Token या Chat ID नहीं मिला।")
         return
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
+        
+    # .strip() किसी भी अनचाहे स्पेस को हटा देगा
+    safe_chat_id = str(TELEGRAM_CHAT_ID).strip() 
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN.strip()}/sendMessage"
     
-    # 🔥 BULLETPROOF RETRY LOGIC (Timeout बढ़ाकर 20s किया और 3 Retries डाले)
+    # Markdown की जगह HTML का इस्तेमाल (ताकि 400 Bad Request ना आए)
+    payload = {"chat_id": safe_chat_id, "text": message, "parse_mode": "HTML"}
+    
     for attempt in range(3):
         try:
             import json
@@ -30,10 +34,12 @@ def send_telegram_alert(message):
             with urllib.request.urlopen(req, timeout=20) as response:
                 if response.status == 200:
                     print(f" 🚀 [TELEGRAM ALERT SENT SUCCESSFULLY on Attempt {attempt+1}!]")
-                    return  # मैसेज चला गया, तो यहीं से वापस आ जाओ
+                    return 
         except Exception as e:
-            print(f" ⚠️ TELEGRAM RETRY {attempt+1} FAILED: ({e})")
-            time.sleep(2)  # अगले ट्राई से पहले 2 सेकंड रुको
+            # यह लाइन टेलीग्राम का असली एरर मैसेज (जैसे Chat not found) प्रिंट करेगी
+            err_details = e.read().decode('utf-8') if hasattr(e, 'read') else str(e)
+            print(f" ⚠️ TELEGRAM RETRY {attempt+1} FAILED: {err_details}")
+            time.sleep(2)
             
     print(" ❌ TELEGRAM ERROR: 3 बार ट्राई करने के बाद भी मैसेज नहीं गया।")
 
@@ -48,7 +54,7 @@ MAX_VRR_CAP = 15.0
 ist = pytz.timezone("Asia/Kolkata")
 now_ist = datetime.now(ist)
 
-print(f"🔓 AGNI v39.1 LIVE CLOCK : [{now_ist.strftime('%I:%M:%S %p IST')}]")
+print(f"🔓 AGNI v40.0 LIVE CLOCK : [{now_ist.strftime('%I:%M:%S %p IST')}]")
 
 sector_map = {
     "IT": ["INFY.NS", "TCS.NS", "HCLTECH.NS", "WIPRO.NS", "TECHM.NS", "COFORGE.NS", "BSOFT.NS", "PERSISTENT.NS", "MPHASIS.NS", "LTTS.NS", "OFSS.NS", "CYIENT.NS", "KPITTECH.NS", "TATAELXSI.NS", "LTIM.NS", "SONATSOFTW.NS", "ZENSARTECH.NS", "INTELLECT.NS", "MASTEK.NS", "HAPPSTMNDS.NS", "LATENTVIEW.NS", "NEWGEN.NS", "DATAPATTNS.NS", "CEINFO.NS", "AFFLE.NS", "ROUTE.NS", "TANLA.NS", "INFIBEAM.NS", "RATEGAIN.NS", "FSL.NS", "NETWEB.NS"],
@@ -307,7 +313,7 @@ for s in indian_stocks:
             verdict = "🟢 INSTITUTIONAL PASS"
             
             if is_smart_money_trap: verdict = trap_msg
-            elif sec_divergence: verdict = f"🚫 REJECT: SECTOR DIVERGENCE ({div_msg})"
+            elif sec_divergence: verdict = f"🚫 REJECT: SECTOR DIVERGENCE"
             elif fake_defensive: verdict = "🚫 REJECT: FAKE DEFENSIVE"
             elif (curr_h - curr_l) == 0 and abs(stock_pct_change) > 4.5: verdict = "🚫 REJECT: CIRCUIT HIT"
             elif adr_used_pct > my_morning_fuel_cap: verdict = f"🚫 REJECT: EXHAUSTED"
@@ -324,35 +330,36 @@ for s in indian_stocks:
                 passed_stocks_count += 1
                 stock_sym = s.replace(".NS", "")
                 
+                # HTML FORMATTED MESSAGE 
                 msg = (
-                    f"🔥 *AGNI BREAKOUT ALERT* 🔥\n"
+                    f"🔥 <b>AGNI BREAKOUT ALERT</b> 🔥\n"
                     f"-------------------------------------\n"
-                    f"📌 *Stock:* `{stock_sym}` ({trade_dir})\n"
-                    f"💰 *CMP:* ₹{round(live_c, 2)}\n"
-                    f"📊 *Volume Multiplier:* {round(vrr_delta, 1)}x\n"
-                    f"🛡️ *Stop Loss:* ₹{round(final_sl, 2)}\n"
-                    f"🎯 *Target 1 (1:3):* ₹{round(t1, 2)}\n"
-                    f"🎯 *Target 2 (1:5):* ₹{round(t2, 2)}\n"
-                    f"📦 *Qty:* {qty} Shares\n"
-                    f"🧠 *Logic:* { ' + '.join(reasons) }\n"
+                    f"📌 <b>Stock:</b> <code>{stock_sym}</code> ({trade_dir})\n"
+                    f"💰 <b>CMP:</b> ₹{round(live_c, 2)}\n"
+                    f"📊 <b>Volume Multiplier:</b> {round(vrr_delta, 1)}x\n"
+                    f"🛡️ <b>Stop Loss:</b> ₹{round(final_sl, 2)}\n"
+                    f"🎯 <b>Target 1 (1:3):</b> ₹{round(t1, 2)}\n"
+                    f"🎯 <b>Target 2 (1:5):</b> ₹{round(t2, 2)}\n"
+                    f"📦 <b>Qty:</b> {qty} Shares\n"
+                    f"🧠 <b>Logic:</b> { ' + '.join(reasons) }\n"
                     f"-------------------------------------\n"
-                    f"⏰ *Time:* {now_ist.strftime('%I:%M:%S %p IST')}"
+                    f"⏰ <b>Time:</b> {now_ist.strftime('%I:%M:%S %p IST')}"
                 )
                 send_telegram_alert(msg)
 
     except: pass
 
 # ------------------------------------------------------------------------------
-# 📉 SCAN SUMMARY ALERT
+# 📉 SCAN SUMMARY ALERT (HTML FORMATTED)
 # ------------------------------------------------------------------------------
 if passed_stocks_count == 0:
     summary_msg = (
-        f"ℹ️ *AGNI HEARTBEAT (SCAN COMPLETE)*\n"
+        f"ℹ️ <b>AGNI HEARTBEAT (SCAN COMPLETE)</b>\n"
         f"-------------------------------------\n"
-        f"📉 *Nifty Trend:* {nifty_regime}\n"
-        f"⚠️ *Result:* 0 Stocks Passed.\n"
+        f"📉 <b>Nifty Trend:</b> {nifty_regime}\n"
+        f"⚠️ <b>Result:</b> 0 Stocks Passed.\n"
         f"(All breakouts were rejected by strict filters).\n"
-        f"⏰ *Time:* {now_ist.strftime('%I:%M:%S %p IST')}"
+        f"⏰ <b>Time:</b> {now_ist.strftime('%I:%M:%S %p IST')}"
     )
     send_telegram_alert(summary_msg)
 
