@@ -91,7 +91,7 @@ while True:
         send_telegram_alert("🌙 <b>MARKET CLOSED. SYSTEM SHUTTING DOWN.</b>")
         break
 
-    if now_ist.time() > dtime(13, 0, 0):
+    if now_ist.time() > dtime(15, 15, 0):
         print(f" ⏳ No new trades after 1:00 PM. Just keeping server alive... [{now_ist.strftime('%I:%M:%S %p')}]")
         time.sleep(300)
         continue
