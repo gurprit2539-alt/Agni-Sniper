@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚀 PREDATOR v46.0 : AGNI (THE 1000-STOCK MAX BEAST SCANNER)
+# 🚀 PREDATOR v47.0 : AGNI (MAX UNIVERSE + ANTI-TRAP WICK FILTERS)
 # ==============================================================================
 import logging, os, sys, warnings, urllib.request, json, time
 from datetime import datetime, time as dtime
@@ -25,7 +25,7 @@ def send_telegram_alert(message):
 
 BASE_MAX_RISK_BUDGET = 180.0
 
-# 🔥 THE ULTIMATE UNIVERSE: 900-1000+ Stocks (Nifty 500 + Mid/Smallcap + Microcaps)
+# 🔥 THE ULTIMATE UNIVERSE: 750+ Stocks 
 raw_tickers = """
 RELIANCE TCS HDFCBANK ICICIBANK INFY SBI ITC BHARTIARTL HINDUNILVR L&T BAJFINANCE HCLTECH KOTAKBANK AXISBANK ADANIENT 
 ASIANPAINT MARUTI SUNPHARMA TATASTEEL TITAN ULTRACEMCO ONGC TATAMOTORS NTPC POWERGRID NESTLEIND M&M WRO ADANIPORTS 
@@ -79,11 +79,10 @@ TEAMLEASE TECHIN TECHNOE TERASOFT TEXINFRA TFCILTD TFL TGBHOTELS THANGAMAYL THEI
 TIDEWATER TIIL TIMESGTY TIMETECHNO TINPLATE TIPSINDLTD TIRUMALCHM TMRVL TNPL TOKYOPLAST TOTAL TOUCHWOOD TPLPLASTEH TREEHOUSE 
 TREJHARA TRF TRIGYN TRIL TRITURBINE TTKHLTHCARE TTL TV18BRDCST TVSSELECT
 """
-# लिस्ट क्लीनिंग और .NS लगाकर डुप्लीकेट्स रिमूवल (इससे लिस्ट में लगभग 800-950 स्टॉक्स बनेंगे)
 indian_stocks = sorted(list(set([f"{t.strip()}.NS" for t in raw_tickers.split() if t.strip()])))
 
-print(f" 🚀 AGNI v46.0 : MAX UNIVERSE SCANNER INITIALIZED ({len(indian_stocks)} Stocks) ...")
-send_telegram_alert(f"🟢 <b>AGNI v46.0 ONLINE</b>\n📡 Scanning Maximum Universe: {len(indian_stocks)} Stocks")
+print(f" 🚀 AGNI v47.0 : SMART SNIPER INITIALIZED ({len(indian_stocks)} Stocks) ...")
+send_telegram_alert(f"🟢 <b>AGNI v47.0 ONLINE</b>\n📡 Scanning Maximum Universe: {len(indian_stocks)} Stocks\n🛡️ Smart Anti-Trap Filters Active")
 
 while True:
     now_ist = datetime.now(ist)
@@ -91,19 +90,18 @@ while True:
         send_telegram_alert("🌙 <b>MARKET CLOSED. SYSTEM SHUTTING DOWN.</b>")
         break
 
+    # अगर दोपहर 3:15 PM तक चलाना है तो इसे ऐसे ही रहने दें
     if now_ist.time() > dtime(15, 15, 0):
-        print(f" ⏳ No new trades after 1:00 PM. Just keeping server alive... [{now_ist.strftime('%I:%M:%S %p')}]")
+        print(f" ⏳ No new trades after 3:15 PM. Just keeping server alive... [{now_ist.strftime('%I:%M:%S %p')}]")
         time.sleep(300)
         continue
 
-    print(f"\n ⚡ SCAN STARTED AT : [{now_ist.strftime('%I:%M:%S %p')}] - Fetching {len(indian_stocks)} Stocks (This might take 1-2 mins)...")
+    print(f"\n ⚡ SCAN STARTED AT : [{now_ist.strftime('%I:%M:%S %p')}] - Fetching {len(indian_stocks)} Stocks...")
     
     try:
-        # Threads=True के साथ सारे स्टॉक्स एक झटके में डाउनलोड होंगे
         df_daily = yf.download(indian_stocks + ["^NSEI"], period="5d", interval="1d", group_by="ticker", threads=True, progress=False)
         df_5m = yf.download(indian_stocks + ["^NSEI"], period="5d", interval="5m", group_by="ticker", threads=True, progress=False)
     except Exception as e:
-        print(f" ⛔ Download Error (Too many stocks), Retrying in 60s...")
         time.sleep(60)
         continue
 
@@ -114,7 +112,7 @@ while True:
             if s not in df_5m.columns.levels[0]: continue
             df = df_5m[s].dropna()
             live_c = float(df["Close"].iloc[-1])
-            if live_c < 30.0: continue # 30 रुपये से नीचे का कचरा (Penny stocks) इग्नोर 
+            if live_c < 30.0: continue 
 
             df["Typ"] = (df["High"] + df["Low"] + df["Close"]) / 3
             df["Date"] = df.index.date
@@ -128,25 +126,47 @@ while True:
             prev_close = float(df_daily[s]["Close"].dropna().iloc[-2]) if len(df_daily[s].dropna()) > 1 else float(today_data["Open"].iloc[0])
             
             stock_pct_change = ((live_c - prev_close) / prev_close) * 100
-            
             live_vwap, ema9_val = float(df["VWAP"].iloc[-1]), float(df["EMA9"].iloc[-1])
             live_v, prev_v = float(df["Volume"].iloc[-1]), float(df["Volume"].iloc[-2])
             vrr_delta = (live_v / prev_v) if prev_v > 0 else 1.0
 
-            # 🔥 RULE 1: सिर्फ टॉप गेनर्स (कम से कम 2.5% ऊपर होना चाहिए)
-            if stock_pct_change < 2.5: continue
+            # -------------------------------------------------------------
+            # 🛡️ THE NEW ANTI-TRAP GUARDS (OHLC DATA)
+            # -------------------------------------------------------------
+            curr_o = float(today_data["Open"].iloc[-1])
+            curr_h = float(today_data["High"].iloc[-1])
+            curr_l = float(today_data["Low"].iloc[-1])
+            candle_height = curr_h - curr_l
 
-            # 🔥 RULE 2: स्ट्रॉन्ग अपट्रेंड (VWAP और 9-EMA के ऊपर)
+            if candle_height > 0:
+                upper_wick_pct = (curr_h - max(curr_o, live_c)) / candle_height
+                close_pct = ((live_c - curr_l) / candle_height) * 100
+                current_candle_size_pct = (candle_height / curr_l) * 100
+            else:
+                upper_wick_pct, close_pct, current_candle_size_pct = 0, 50.0, 0
+
+            # 🚫 GUARD 1: ANTI-FOMO (अगर 1 ही कैंडल में 2.5% से ज्यादा भागा है, तो रिजेक्ट)
+            if current_candle_size_pct > 2.5: continue
+
+            # 🚫 GUARD 2: WICK REJECTION (अगर कैंडल में ऊपर की तरफ 35% से बड़ी पूंछ है, तो रिजेक्ट)
+            if upper_wick_pct > 0.35: continue
+
+            # 🚫 GUARD 3: STRONG CLOSE (कैंडल को अपने टॉप 40% हिस्से में बंद होना ज़रूरी है)
+            if close_pct < 60.0: continue
+
+            # 🚫 GUARD 4: BLOCK DEAL TRAP (10x से ज़्यादा वॉल्यूम अचानक आना रिस्की होता है)
+            if vrr_delta > 10.0: continue
+
+            # -------------------------------------------------------------
+            # 🚀 BASE LOGIC
+            # -------------------------------------------------------------
+            if stock_pct_change < 2.0: continue # थोड़ा रिलैक्स किया ताकि कैंडल बनने के पहले पकड़ ले
             if live_c < live_vwap or live_c < ema9_val: continue
-
-            # 🔥 RULE 3: डे-हाई के पास (High से 1.2% से ज्यादा नहीं गिरना चाहिए)
+            
             distance_from_high = ((day_high - live_c) / day_high) * 100
-            if distance_from_high > 1.2: continue 
-
-            # 🔥 RULE 4: वॉल्यूम ब्लास्ट (कम से कम 2.5x जंप)
+            if distance_from_high > 1.5: continue 
             if vrr_delta < 2.5: continue
 
-            # SL और Targets
             final_sl = ema9_val * 0.998 
             risk_sh = abs(live_c - final_sl)
             
@@ -159,7 +179,7 @@ while True:
             stock_sym = s.replace(".NS", "").replace("&", "and")
             
             item_msg = (
-                f"🚀 <b>{stock_sym}</b> (ROCKET RIDER)\n"
+                f"🚀 <b>{stock_sym}</b> (SMART SNIPER)\n"
                 f"💰 CMP: ₹{round(live_c, 2)} | 📈 Up: +{stock_pct_change:.2f}%\n"
                 f"🔥 Vol Blast: {round(vrr_delta, 1)}x | 🛡️ SL (9-EMA): ₹{round(final_sl, 2)}\n"
                 f"🎯 T1 (1:2): ₹{round(t1, 2)} | 🎯 T2 (1:4): ₹{round(t2, 2)}"
@@ -167,11 +187,10 @@ while True:
             approved_alerts.append(item_msg)
         except: pass
 
-    # सिंगल कंबाइंड मैसेज
     if len(approved_alerts) > 0:
         final_message = (
-            f"🔥 <b>AGNI MAX SCANNER</b> 🔥\n"
-            f"<i>(Catching Day-High Breakouts)</i>\n"
+            f"🔥 <b>AGNI MAX SCANNER (Safe Mode)</b> 🔥\n"
+            f"<i>(Filtered out Spikes & Pump-Dumps)</i>\n"
             f"-------------------------------------\n"
         )
         final_message += "\n\n".join(approved_alerts)
@@ -179,6 +198,6 @@ while True:
         
         send_telegram_alert(final_message)
     else:
-        print(f" ⏳ SCAN COMPLETE. No fresh rockets at Day-High. SLEEPING 5 MINS...")
+        print(f" ⏳ SCAN COMPLETE. Traps avoided. No safe rockets found. SLEEPING 5 MINS...")
     
     time.sleep(300)
