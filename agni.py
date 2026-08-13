@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚀 PREDATOR v47.0 : AGNI (MAX UNIVERSE + ANTI-TRAP WICK FILTERS)
+# 🚀 PREDATOR v48.0 : AGNI (TRUE INSTITUTIONAL VOLUME + ANTI-TRAP GUARDS)
 # ==============================================================================
 import logging, os, sys, warnings, urllib.request, json, time
 from datetime import datetime, time as dtime
@@ -81,8 +81,8 @@ TREJHARA TRF TRIGYN TRIL TRITURBINE TTKHLTHCARE TTL TV18BRDCST TVSSELECT
 """
 indian_stocks = sorted(list(set([f"{t.strip()}.NS" for t in raw_tickers.split() if t.strip()])))
 
-print(f" 🚀 AGNI v47.0 : SMART SNIPER INITIALIZED ({len(indian_stocks)} Stocks) ...")
-send_telegram_alert(f"🟢 <b>AGNI v47.0 ONLINE</b>\n📡 Scanning Maximum Universe: {len(indian_stocks)} Stocks\n🛡️ Smart Anti-Trap Filters Active")
+print(f" 🚀 AGNI v48.0 : INSTITUTIONAL VOLUME SCANNER INITIALIZED ({len(indian_stocks)} Stocks) ...")
+send_telegram_alert(f"🟢 <b>AGNI v48.0 ONLINE</b>\n📡 Scanning: {len(indian_stocks)} Stocks\n🛡️ Strict RVOL (Average Volume) Filter Active")
 
 while True:
     now_ist = datetime.now(ist)
@@ -90,13 +90,12 @@ while True:
         send_telegram_alert("🌙 <b>MARKET CLOSED. SYSTEM SHUTTING DOWN.</b>")
         break
 
-    # अगर दोपहर 3:15 PM तक चलाना है तो इसे ऐसे ही रहने दें
     if now_ist.time() > dtime(15, 15, 0):
         print(f" ⏳ No new trades after 3:15 PM. Just keeping server alive... [{now_ist.strftime('%I:%M:%S %p')}]")
         time.sleep(300)
         continue
 
-    print(f"\n ⚡ SCAN STARTED AT : [{now_ist.strftime('%I:%M:%S %p')}] - Fetching {len(indian_stocks)} Stocks...")
+    print(f"\n ⚡ SCAN STARTED AT : [{now_ist.strftime('%I:%M:%S %p')}] - Fetching Data...")
     
     try:
         df_daily = yf.download(indian_stocks + ["^NSEI"], period="5d", interval="1d", group_by="ticker", threads=True, progress=False)
@@ -119,19 +118,25 @@ while True:
             df["VWAP"] = df.groupby("Date").apply(lambda x: (x["Typ"] * x["Volume"]).cumsum() / x["Volume"].cumsum()).reset_index(level=0, drop=True)
             df["EMA9"] = df["Close"].ewm(span=9, adjust=False).mean()
             
+            # 🔥 NEW: 20-Period Volume Average (RVOL Baseline)
+            df["Vol_SMA20"] = df["Volume"].rolling(20).mean()
+            
             today_data = df.loc[df["Date"] == df["Date"].iloc[-1]]
             if len(today_data) < 2: continue
             
             day_high = float(today_data["High"].max())
             prev_close = float(df_daily[s]["Close"].dropna().iloc[-2]) if len(df_daily[s].dropna()) > 1 else float(today_data["Open"].iloc[0])
-            
             stock_pct_change = ((live_c - prev_close) / prev_close) * 100
+            
             live_vwap, ema9_val = float(df["VWAP"].iloc[-1]), float(df["EMA9"].iloc[-1])
-            live_v, prev_v = float(df["Volume"].iloc[-1]), float(df["Volume"].iloc[-2])
-            vrr_delta = (live_v / prev_v) if prev_v > 0 else 1.0
+            live_v = float(df["Volume"].iloc[-1])
+            
+            # 🛡️ FIX: Calculating Volume Multiplier against the 20-candle AVERAGE, not just the last candle
+            avg_vol_20 = float(df["Vol_SMA20"].iloc[-2]) 
+            vrr_delta = (live_v / avg_vol_20) if avg_vol_20 > 0 else 0.0
 
             # -------------------------------------------------------------
-            # 🛡️ THE NEW ANTI-TRAP GUARDS (OHLC DATA)
+            # 🛡️ THE ANTI-TRAP GUARDS (OHLC DATA)
             # -------------------------------------------------------------
             curr_o = float(today_data["Open"].iloc[-1])
             curr_h = float(today_data["High"].iloc[-1])
@@ -148,24 +153,23 @@ while True:
             # 🚫 GUARD 1: ANTI-FOMO (अगर 1 ही कैंडल में 2.5% से ज्यादा भागा है, तो रिजेक्ट)
             if current_candle_size_pct > 2.5: continue
 
-            # 🚫 GUARD 2: WICK REJECTION (अगर कैंडल में ऊपर की तरफ 35% से बड़ी पूंछ है, तो रिजेक्ट)
+            # 🚫 GUARD 2: WICK REJECTION (अगर कैंडल में ऊपर 35% से बड़ी पूंछ है, तो रिजेक्ट)
             if upper_wick_pct > 0.35: continue
 
             # 🚫 GUARD 3: STRONG CLOSE (कैंडल को अपने टॉप 40% हिस्से में बंद होना ज़रूरी है)
             if close_pct < 60.0: continue
 
-            # 🚫 GUARD 4: BLOCK DEAL TRAP (10x से ज़्यादा वॉल्यूम अचानक आना रिस्की होता है)
-            if vrr_delta > 10.0: continue
+            # 🚫 GUARD 4: RVOL REJECTION (अब वॉल्यूम 20-कैंडल एवरेज से कम से कम 3x ज़्यादा होना चाहिए)
+            if vrr_delta < 3.0 or vrr_delta > 15.0: continue
 
             # -------------------------------------------------------------
             # 🚀 BASE LOGIC
             # -------------------------------------------------------------
-            if stock_pct_change < 2.0: continue # थोड़ा रिलैक्स किया ताकि कैंडल बनने के पहले पकड़ ले
+            if stock_pct_change < 2.0: continue 
             if live_c < live_vwap or live_c < ema9_val: continue
             
             distance_from_high = ((day_high - live_c) / day_high) * 100
-            if distance_from_high > 1.5: continue 
-            if vrr_delta < 2.5: continue
+            if distance_from_high > 1.2: continue 
 
             final_sl = ema9_val * 0.998 
             risk_sh = abs(live_c - final_sl)
@@ -179,9 +183,9 @@ while True:
             stock_sym = s.replace(".NS", "").replace("&", "and")
             
             item_msg = (
-                f"🚀 <b>{stock_sym}</b> (SMART SNIPER)\n"
+                f"🚀 <b>{stock_sym}</b> (INSTITUTIONAL BREAKOUT)\n"
                 f"💰 CMP: ₹{round(live_c, 2)} | 📈 Up: +{stock_pct_change:.2f}%\n"
-                f"🔥 Vol Blast: {round(vrr_delta, 1)}x | 🛡️ SL (9-EMA): ₹{round(final_sl, 2)}\n"
+                f"🔥 True Vol (RVOL): {round(vrr_delta, 1)}x | 🛡️ SL (9-EMA): ₹{round(final_sl, 2)}\n"
                 f"🎯 T1 (1:2): ₹{round(t1, 2)} | 🎯 T2 (1:4): ₹{round(t2, 2)}"
             )
             approved_alerts.append(item_msg)
@@ -190,7 +194,7 @@ while True:
     if len(approved_alerts) > 0:
         final_message = (
             f"🔥 <b>AGNI MAX SCANNER (Safe Mode)</b> 🔥\n"
-            f"<i>(Filtered out Spikes & Pump-Dumps)</i>\n"
+            f"<i>(Filtered Fake Spikes using True RVOL)</i>\n"
             f"-------------------------------------\n"
         )
         final_message += "\n\n".join(approved_alerts)
