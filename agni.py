@@ -1,5 +1,5 @@
 # ==============================================================================
-# 🚀 PREDATOR v51.0 : AGNI (THE PULLBACK SNIPER - 750+ STOCKS)
+# 🚀 PREDATOR v52.0 : AGNI (NIFTY TREND GUARD + LONG/SHORT PULLBACK SNIPER)
 # ==============================================================================
 import logging, os, sys, warnings, urllib.request, json, time
 from datetime import datetime, time as dtime
@@ -25,7 +25,7 @@ def send_telegram_alert(message):
 
 BASE_MAX_RISK_BUDGET = 180.0
 
-# 🔥 THE ULTIMATE UNIVERSE: 750+ Liquid Stocks 
+# 🔥 THE ULTIMATE UNIVERSE: 750+ Liquid Stocks
 raw_tickers = """
 RELIANCE TCS HDFCBANK ICICIBANK INFY SBI ITC BHARTIARTL HINDUNILVR L&T BAJFINANCE HCLTECH KOTAKBANK AXISBANK ADANIENT 
 ASIANPAINT MARUTI SUNPHARMA TATASTEEL TITAN ULTRACEMCO ONGC TATAMOTORS NTPC POWERGRID NESTLEIND M&M WRO ADANIPORTS 
@@ -81,8 +81,8 @@ TREJHARA TRF TRIGYN TRIL TRITURBINE TTKHLTHCARE TTL TV18BRDCST TVSSELECT
 """
 indian_stocks = sorted(list(set([f"{t.strip()}.NS" for t in raw_tickers.split() if t.strip()])))
 
-print(f" 🚀 AGNI v51.0 : PULLBACK SNIPER INITIALIZED ({len(indian_stocks)} Stocks) ...")
-send_telegram_alert(f"🟢 <b>AGNI v51.0 ONLINE (PULLBACK MODE)</b>\n📡 Universe: {len(indian_stocks)} Stocks\n🛡️ Strategy: Buy on Support Bounces")
+print(f" 🚀 AGNI v52.0 : NIFTY TREND SNIPER INITIALIZED ({len(indian_stocks)} Stocks) ...")
+send_telegram_alert(f"🟢 <b>AGNI v52.0 ONLINE (TREND SNIPER)</b>\n📡 Universe: {len(indian_stocks)} Stocks\n🛡️ Master Guards: Nifty Regime + Gap limits + Confirmed Bounces")
 
 while True:
     now_ist = datetime.now(ist)
@@ -100,13 +100,44 @@ while True:
         time.sleep(120)
         continue
 
-    print(f"\n ⚡ SCAN STARTED AT : [{now_ist.strftime('%I:%M:%S %p')}] - Hunting Pullbacks...")
+    print(f"\n ⚡ SCAN STARTED AT : [{now_ist.strftime('%I:%M:%S %p')}] - Fetching Data...")
     
     try:
         df_daily = yf.download(indian_stocks + ["^NSEI"], period="5d", interval="1d", group_by="ticker", threads=True, progress=False)
         df_5m = yf.download(indian_stocks + ["^NSEI"], period="5d", interval="5m", group_by="ticker", threads=True, progress=False)
     except Exception as e:
         time.sleep(60)
+        continue
+
+    # -------------------------------------------------------------
+    # 🧠 THE NIFTY REGIME (TREND) CHECKER
+    # -------------------------------------------------------------
+    nifty_trend = "SIDEWAYS"
+    nifty_msg = "🟡 NIFTY: SIDEWAYS (No clear trend)"
+    try:
+        nifty_df = df_5m["^NSEI"].dropna()
+        nifty_df["Typ"] = (nifty_df["High"] + nifty_df["Low"] + nifty_df["Close"]) / 3
+        nifty_df["Date"] = nifty_df.index.date
+        nifty_df["VWAP"] = nifty_df.groupby("Date").apply(lambda x: (x["Typ"] * x["Volume"]).cumsum() / x["Volume"].cumsum()).reset_index(level=0, drop=True)
+        nifty_df["EMA20"] = nifty_df["Close"].ewm(span=20, adjust=False).mean()
+        
+        n_live = float(nifty_df["Close"].iloc[-1])
+        n_vwap = float(nifty_df["VWAP"].iloc[-1])
+        n_ema20 = float(nifty_df["EMA20"].iloc[-1])
+        
+        if n_live > n_vwap and n_live > n_ema20:
+            nifty_trend = "BULLISH"
+            nifty_msg = "🟢 NIFTY: BULLISH (Hunting LONGS 🚀)"
+        elif n_live < n_vwap and n_live < n_ema20:
+            nifty_trend = "BEARISH"
+            nifty_msg = "🔴 NIFTY: BLEEDING (Hunting SHORTS 🩸)"
+    except:
+        pass
+
+    # अगर निफ्टी साइडवेज़ है, तो रिस्क मत लो
+    if nifty_trend == "SIDEWAYS":
+        print(" 🟡 Nifty is Sideways/Choppy. Waiting for clear trend...")
+        time.sleep(300)
         continue
 
     approved_alerts = []
@@ -129,81 +160,96 @@ while True:
             if len(today_data) < 2: continue
             
             day_high = float(today_data["High"].max())
+            day_low = float(today_data["Low"].min())
+            day_open = float(today_data["Open"].iloc[0])
             prev_close = float(df_daily[s]["Close"].dropna().iloc[-2]) if len(df_daily[s].dropna()) > 1 else float(today_data["Open"].iloc[0])
             
-            # -------------------------------------------------------------
-            # 🧠 THE PULLBACK BOUNCE LOGIC
-            # -------------------------------------------------------------
             stock_pct_change = ((live_c - prev_close) / prev_close) * 100
             
-            # 1. स्टॉक आज मजबूत होना चाहिए (Top Gainer list material)
-            if stock_pct_change < 1.5: continue 
-            
-            # 2. पुलबैक चेक (डे-हाई से स्टॉक को 0.8% से 3.5% के बीच गिरा हुआ होना चाहिए)
-            dist_from_high = ((day_high - live_c) / day_high) * 100
-            if dist_from_high < 0.8 or dist_from_high > 3.5: continue 
-            
+            # 🚫 GAP FILTER: 3% से ज्यादा गैप-अप या गैप-डाउन इग्नोर करें
+            gap_pct = ((day_open - prev_close) / prev_close) * 100
+            if abs(gap_pct) > 3.0: continue
+
             live_vwap, ema9_val, ema20_val = float(df["VWAP"].iloc[-1]), float(df["EMA9"].iloc[-1]), float(df["EMA20"].iloc[-1])
+            curr_o, curr_h, curr_l = float(today_data["Open"].iloc[-1]), float(today_data["High"].iloc[-1]), float(today_data["Low"].iloc[-1])
             
-            # 3. ट्रेंड अभी भी ज़िंदा होना चाहिए (VWAP और 20-EMA के ऊपर)
-            if live_c < live_vwap or live_c < ema20_val: continue
-
-            # 4. सपोर्ट पर टच / बाउंस चेक (Curent Low 9-EMA या VWAP के एकदम पास होना चाहिए)
-            curr_o = float(today_data["Open"].iloc[-1])
-            curr_h = float(today_data["High"].iloc[-1])
-            curr_l = float(today_data["Low"].iloc[-1])
-            
-            near_ema9 = curr_l <= (ema9_val * 1.003)  # 9-EMA के 0.3% दायरे में छुआ हो
-            near_vwap = curr_l <= (live_vwap * 1.003) # VWAP के 0.3% दायरे में छुआ हो
-            
-            if not (near_ema9 or near_vwap): continue # अगर सपोर्ट पर नहीं है, तो रिजेक्ट
-
-            # 5. रिजेक्शन / ग्रीन बाउंस कन्फर्मेशन
-            candle_body = abs(curr_o - live_c)
-            lower_wick = min(curr_o, live_c) - curr_l
-            
-            is_green_candle = live_c > curr_o
-            good_bottom_rejection = lower_wick > candle_body # नीचे से हथौड़ा (Hammer) बना हो
-            
-            if not (is_green_candle or good_bottom_rejection): continue # लाल कैंडल पर एंट्री नहीं
-
-            # 6. वॉल्यूम (पुलबैक बाउंस में 10x वॉल्यूम नहीं चाहिए, 1.2x से 4x का RVOL काफी है)
             live_v = float(df["Volume"].iloc[-1])
             avg_vol_20 = float(df["Vol_SMA20"].iloc[-2]) 
             vrr_delta = (live_v / avg_vol_20) if avg_vol_20 > 0 else 0.0
-            
-            if vrr_delta < 1.0 or vrr_delta > 5.0: continue
 
-            # 🛡️ SL और Targets
-            # SL सपोर्ट (VWAP या EMA) के थोड़ा सा नीचे होगा, ना कि करंट प्राइस से
-            major_support = min(ema9_val, live_vwap)
-            final_sl = major_support * 0.997 # सपोर्ट से 0.3% नीचे
-            
-            risk_sh = abs(live_c - final_sl)
-            if risk_sh <= 0: continue
-            
-            # अगर SL बहुत बड़ा (2% से ज़्यादा) है, तो ट्रेड इग्नोर करो
-            if (risk_sh / live_c) * 100 > 2.0: continue
+            trade_setup = None
+            final_sl, t1, t2 = 0, 0, 0
 
-            qty = max(1, int(BASE_MAX_RISK_BUDGET / risk_sh))
-            t1 = live_c + (risk_sh * 1.5)  # Hit & Run Target (1:1.5)
-            t2 = live_c + (risk_sh * 3.0)  # Ride Target (1:3)
+            # =========================================================
+            # 🟢 BULLISH SETUP (LONG) - Only if Nifty is Bullish
+            # =========================================================
+            if nifty_trend == "BULLISH":
+                if stock_pct_change >= 1.5 and live_c > ema20_val:
+                    dist_from_high = ((day_high - live_c) / day_high) * 100
+                    if 0.8 <= dist_from_high <= 3.5: # Proper Pullback
+                        near_ema9 = curr_l <= (ema9_val * 1.003)
+                        near_vwap = curr_l <= (live_vwap * 1.003)
+                        
+                        if near_ema9 or near_vwap:
+                            is_green_candle = live_c > curr_o
+                            closes_strong = ((live_c - curr_l) / (curr_h - curr_l)) * 100 > 50 if (curr_h - curr_l) > 0 else False
+                            
+                            if is_green_candle and closes_strong and (1.0 <= vrr_delta <= 5.0):
+                                trade_setup = "LONG"
+                                major_support = min(ema9_val, live_vwap)
+                                final_sl = major_support * 0.997 # Support से 0.3% नीचे
+                                risk_sh = abs(live_c - final_sl)
+                                if risk_sh > 0 and (risk_sh / live_c) * 100 <= 2.0:
+                                    t1 = live_c + (risk_sh * 1.5)
+                                    t2 = live_c + (risk_sh * 3.0)
 
-            stock_sym = s.replace(".NS", "").replace("&", "and")
-            
-            item_msg = (
-                f"🎯 <b>{stock_sym}</b> (PULLBACK BOUNCE)\n"
-                f"💰 Entry: ₹{round(live_c, 2)} | 📈 Up: +{stock_pct_change:.2f}%\n"
-                f"🔥 Bounce Vol: {round(vrr_delta, 1)}x | 🛡️ SL (Safe): ₹{round(final_sl, 2)}\n"
-                f"🎯 T1 (1:1.5): ₹{round(t1, 2)} | 🎯 T2 (1:3.0): ₹{round(t2, 2)}"
-            )
-            approved_alerts.append(item_msg)
+            # =========================================================
+            # 🔴 BEARISH SETUP (SHORT) - Only if Nifty is Bleeding
+            # =========================================================
+            elif nifty_trend == "BEARISH":
+                if stock_pct_change <= -1.5 and live_c < ema20_val:
+                    dist_from_low = ((live_c - day_low) / day_low) * 100
+                    if 0.8 <= dist_from_low <= 3.5: # Proper Pullback Bounce (Upwards)
+                        near_ema9 = curr_h >= (ema9_val * 0.997)
+                        near_vwap = curr_h >= (live_vwap * 0.997)
+                        
+                        if near_ema9 or near_vwap:
+                            is_red_candle = live_c < curr_o
+                            closes_weak = ((curr_h - live_c) / (curr_h - curr_l)) * 100 > 50 if (curr_h - curr_l) > 0 else False
+                            
+                            if is_red_candle and closes_weak and (1.0 <= vrr_delta <= 5.0):
+                                trade_setup = "SHORT"
+                                major_resistance = max(ema9_val, live_vwap)
+                                final_sl = major_resistance * 1.003 # Resistance से 0.3% ऊपर
+                                risk_sh = abs(final_sl - live_c)
+                                if risk_sh > 0 and (risk_sh / live_c) * 100 <= 2.0:
+                                    t1 = live_c - (risk_sh * 1.5)
+                                    t2 = live_c - (risk_sh * 3.0)
+
+            # =========================================================
+            # 📨 MESSAGE GENERATION
+            # =========================================================
+            if trade_setup:
+                qty = max(1, int(BASE_MAX_RISK_BUDGET / risk_sh))
+                stock_sym = s.replace(".NS", "").replace("&", "and")
+                
+                emoji = "🚀" if trade_setup == "LONG" else "🩸"
+                trend_txt = "Up" if trade_setup == "LONG" else "Down"
+                sign = "+" if trade_setup == "LONG" else ""
+                
+                item_msg = (
+                    f"{emoji} <b>{stock_sym}</b> ({trade_setup} BOUNCE)\n"
+                    f"💰 Entry: ₹{round(live_c, 2)} | 📉 {trend_txt}: {sign}{stock_pct_change:.2f}%\n"
+                    f"🔥 Vol RVOL: {round(vrr_delta, 1)}x | 🛡️ SL: ₹{round(final_sl, 2)}\n"
+                    f"🎯 T1 (1:1.5): ₹{round(t1, 2)} | 🎯 T2 (1:3.0): ₹{round(t2, 2)}"
+                )
+                approved_alerts.append(item_msg)
         except: pass
 
     if len(approved_alerts) > 0:
         final_message = (
-            f"🔥 <b>AGNI PULLBACK SNIPER</b> 🔥\n"
-            f"<i>(Buying near VWAP/EMA Support)</i>\n"
+            f"🔥 <b>AGNI TREND SNIPER</b> 🔥\n"
+            f"<i>{nifty_msg}</i>\n"
             f"-------------------------------------\n"
         )
         final_message += "\n\n".join(approved_alerts)
@@ -211,6 +257,6 @@ while True:
         
         send_telegram_alert(final_message)
     else:
-        print(f" ⏳ SCAN COMPLETE. No support bounces found right now. SLEEPING 5 MINS...")
+        print(f" ⏳ SCAN COMPLETE. Market trend respected. No valid pullback setups found. SLEEPING 5 MINS...")
     
     time.sleep(300)
