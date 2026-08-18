@@ -1,9 +1,6 @@
 name: AGNI Sniper (Continuous Run)
 
-on:
-  schedule:
-    # यह अब दिन में सिर्फ एक बार (सुबह 9:15 IST) ट्रिगर होगा
-    - cron: '45 3 * * 1-5' 
+on: 
   workflow_dispatch:
 
 jobs:
